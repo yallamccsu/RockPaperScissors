@@ -63,11 +63,11 @@ def main():
     print(f"Ties: {tie_score}")
 
     if player1_score > player2_score:
-        print("🏆 Player 1 is the overall winner!")
+        print(" Player 1 is the overall winner!")
     elif player2_score > player1_score:
-        print("🏆 Player 2 is the overall winner!")
+        print(" Player 2 is the overall winner!")
     else:
-        print("🤝 It's an overall tie!")
+        print(" It's an overall tie!")
 
 if __name__ == "__main__":
     main()
