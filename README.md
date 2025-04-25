@@ -15,4 +15,11 @@ This is a Python-based Rock, Paper, Scissors game where both Player 1 and Player
 1. Make sure Python is installed on your system.
 2. Download or clone this repository.
 3. Open a terminal or command prompt in the folder with the file.
-4. Run the program using:
+
+## What I Learned
+
+- How to use the `random` module to simulate non-deterministic behavior
+- How to structure a program using functions and clearly named variables
+- Using dictionaries to manage conditional logic efficiently
+- How to process user input and control program flow with loops
+- Tracking and displaying game results in a clear and readable format
