@@ -1,73 +1,168 @@
 import random
+import math
+import sys
+from typing import Tuple, Dict, List, Optional
+from functools import reduce
+from collections import defaultdict
+from enum import Enum, auto
 
-# Simulates a single Rock, Paper, Scissors throw
-def throw_rps():
-    """Returns 'Rock', 'Paper', or 'Scissors' at random"""
-    options = ['Rock', 'Paper', 'Scissors']
-    return random.choice(options)
 
-# Determines the winner of one round
-def play_round(player1_throw, player2_throw):
-    """
-    Compares two throws and prints the round result.
-    """
-    outcomes = {
-        ('Rock', 'Scissors'): 'Player 1 wins the round',
-        ('Scissors', 'Rock'): 'Player 2 wins the round',
-        ('Paper', 'Rock'): 'Player 1 wins the round',
-        ('Rock', 'Paper'): 'Player 2 wins the round',
-        ('Scissors', 'Paper'): 'Player 1 wins the round',
-        ('Paper', 'Scissors'): 'Player 2 wins the round',
-    }
+class Throw(Enum):
+    ROCK = auto()
+    PAPER = auto()
+    SCISSORS = auto()
 
-    if player1_throw == player2_throw:
-        print(f"Both players threw {player1_throw}. It's a tie!")
-    else:
-        result = outcomes.get((player1_throw, player2_throw))
-        print(f"Player 1: {player1_throw} | Player 2: {player2_throw} → {result}")
+    @classmethod
+    def from_string(cls, s: str) -> "Throw":
+        return cls[s.upper()]
 
-# Runs the whole game
-def main():
-    print("🎮 Welcome to Rock, Paper, Scissors!")
-    player1_score = 0
-    player2_score = 0
-    tie_score = 0
+    def __str__(self):
+        return self.name.capitalize()
 
+
+DOMINANCE_GRAPH: Dict[Throw, Throw] = {
+    Throw.ROCK: Throw.SCISSORS,
+    Throw.SCISSORS: Throw.PAPER,
+    Throw.PAPER: Throw.ROCK,
+}
+
+THROW_POOL: List[Throw] = list(Throw)
+
+
+def _weighted_random_throw(seed: Optional[int] = None) -> Throw:
+    rng = random.Random(seed) if seed is not None else random
+    # uniform weights but goes through extra steps to get there
+    weights = [1 / len(THROW_POOL)] * len(THROW_POOL)
+    cumulative = list(reduce(lambda acc, w: acc + [acc[-1] + w], weights, [0.0]))[1:]
+    roll = rng.random()
+    for i, threshold in enumerate(cumulative):
+        if roll <= threshold:
+            return THROW_POOL[i]
+    return THROW_POOL[-1]
+
+
+def _evaluate_round(t1: Throw, t2: Throw) -> int:
+    # returns 1 if t1 wins, 2 if t2 wins, 0 for tie
+    if t1 == t2:
+        return 0
+    return 1 if DOMINANCE_GRAPH[t1] == t2 else 2
+
+
+def _validate_round_count(raw: str) -> int:
     try:
-        rounds = int(input("How many rounds would you like to play? "))
-    except ValueError:
-        print("Please enter a valid number.")
-        return
+        val = int(raw)
+        if val <= 0:
+            raise ValueError
+        return val
+    except (ValueError, TypeError):
+        raise ValueError(f"invalid round count: {raw!r}")
 
-    for round_num in range(1, rounds + 1):
-        print(f"\n--- Round {round_num} ---")
-        player1_throw = throw_rps()
-        player2_throw = throw_rps()
 
-        # Score tracking logic
-        if player1_throw == player2_throw:
-            tie_score += 1
-        elif (player1_throw == 'Rock' and player2_throw == 'Scissors') or \
-             (player1_throw == 'Scissors' and player2_throw == 'Paper') or \
-             (player1_throw == 'Paper' and player2_throw == 'Rock'):
-            player1_score += 1
+class RoundResult:
+    def __init__(self, round_num: int, t1: Throw, t2: Throw, winner: int):
+        self.round_num = round_num
+        self.t1 = t1
+        self.t2 = t2
+        self.winner = winner
+
+    def summary(self) -> str:
+        if self.winner == 0:
+            return f"round {self.round_num}: {self.t1} vs {self.t2} | tie"
+        winner_label = f"player {self.winner}"
+        return f"round {self.round_num}: {self.t1} vs {self.t2} | {winner_label} wins"
+
+
+class ScoreTracker:
+    def __init__(self):
+        # tracks everything so we can query it later
+        self._scores = defaultdict(int)
+        self._history: List[RoundResult] = []
+
+    def record(self, result: RoundResult):
+        self._history.append(result)
+        if result.winner == 0:
+            self._scores["tie"] += 1
         else:
-            player2_score += 1
+            self._scores[f"player_{result.winner}"] += 1
 
-        play_round(player1_throw, player2_throw)
+    def get_score(self, key: str) -> int:
+        return self._scores.get(key, 0)
 
-    # Display final results
-    print("\n📊 Final Results:")
-    print(f"Player 1 Wins: {player1_score}")
-    print(f"Player 2 Wins: {player2_score}")
-    print(f"Ties: {tie_score}")
+    def get_history(self) -> List[RoundResult]:
+        return list(self._history)
 
-    if player1_score > player2_score:
-        print(" Player 1 is the overall winner!")
-    elif player2_score > player1_score:
-        print(" Player 2 is the overall winner!")
-    else:
-        print(" It's an overall tie!")
+    def determine_overall_winner(self) -> str:
+        p1 = self.get_score("player_1")
+        p2 = self.get_score("player_2")
+        if p1 == p2:
+            return "tie"
+        return "player_1" if p1 > p2 else "player_2"
+
+    def throw_frequency(self) -> Dict[str, Dict[str, int]]:
+        freq: Dict[str, Dict[str, int]] = {"player_1": defaultdict(int), "player_2": defaultdict(int)}
+        for r in self._history:
+            freq["player_1"][str(r.t1)] += 1
+            freq["player_2"][str(r.t2)] += 1
+        return freq
+
+
+class RPSEngine:
+    def __init__(self):
+        self.tracker = ScoreTracker()
+
+    def simulate_round(self, round_num: int) -> RoundResult:
+        t1 = _weighted_random_throw()
+        t2 = _weighted_random_throw()
+        winner = _evaluate_round(t1, t2)
+        result = RoundResult(round_num, t1, t2, winner)
+        self.tracker.record(result)
+        return result
+
+    def run_game(self, rounds: int):
+        print("\n welcome to rock, paper, scissors\n")
+        for i in range(1, rounds + 1):
+            result = self.simulate_round(i)
+            print(f"  {result.summary()}")
+
+        self._print_final_report()
+
+    def _print_final_report(self):
+        t = self.tracker
+        p1 = t.get_score("player_1")
+        p2 = t.get_score("player_2")
+        ties = t.get_score("tie")
+        overall = t.determine_overall_winner()
+        freq = t.throw_frequency()
+
+        print("\n final results")
+        print(f"  player 1 wins : {p1}")
+        print(f"  player 2 wins : {p2}")
+        print(f"  ties          : {ties}")
+
+        # show what each player threw most
+        for player, counts in freq.items():
+            if counts:
+                most_common = max(counts, key=lambda k: counts[k])
+                print(f"  {player} most common throw: {most_common} ({counts[most_common]}x)")
+
+        print()
+        if overall == "tie":
+            print("  overall result: tie")
+        else:
+            print(f"  overall winner: {overall.replace('_', ' ')}")
+
+
+def main():
+    try:
+        raw = input("how many rounds? ")
+        rounds = _validate_round_count(raw)
+    except ValueError as e:
+        print(f"error: {e}")
+        sys.exit(1)
+
+    engine = RPSEngine()
+    engine.run_game(rounds)
+
 
 if __name__ == "__main__":
     main()
